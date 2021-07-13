@@ -1,0 +1,196 @@
+(doc Expand "is a simple macro expander based on
+[this talk by Matthew Flat](https://www.youtube.com/watch?v=Or_yKiI3Ha4).")
+(defmodule Expand
+  (defndynamic syntax [e scopes]
+    (list 'syntax {"e" e "scopes" scopes}))
+  (defndynamic syntax-e [s]
+    (Map.get (cadr s) "e"))
+  (defndynamic syntax-scopes [s]
+    (Map.get (cadr s) "scopes"))
+  (defndynamic syntax? [s]
+    (and (list? s)
+         (= (length s) 2)
+         (= (car s) 'syntax)
+         (= (Map.keys (cadr s)) '("e" "scopes"))))
+  (defndynamic from-datum [v]
+    (cond
+      (Expand.syntax? v) v
+      (symbol? v) (Expand.syntax v '())
+      (list? v) (map Expand.from-datum v)
+      (array? v) (map Expand.from-datum v)
+      v))
+  (defndynamic to-datum [s]
+    (cond
+      (Expand.syntax? s) (Expand.syntax-e s)
+      (list? s) (map Expand.to-datum s)
+      (array? s) (map Expand.to-datum s)
+      s))
+  (defndynamic scope [] (gensym-with 'scope))
+  (defndynamic adjust-scope [s sc op]
+    (cond
+      (Expand.syntax? s)
+        (Expand.syntax (Expand.syntax-e s)
+                       (op (Expand.syntax-scopes s) sc))
+      (list? s)
+        (map (fn [e] (Expand.adjust-scope e sc op)) s)
+      (array? s)
+        (map (fn [e] (Expand.adjust-scope e sc op)) s)
+      s))
+  (defndynamic add-scope [s sc]
+    (Expand.adjust-scope s sc (fn [l e] (cons e l))))
+  (defndynamic flip-scope [s sc]
+    (Expand.adjust-scope s sc
+      (fn [l elem]
+        (let [i (List.find l (fn [m] (= m elem)))]
+          (if (nil? i)
+            (cons elem l)
+            (Dynamic.List.remove-nth l i))))))
+
+  (defdynamic all-bindings {})
+  (defndynamic add-binding! [id binding]
+    (set! Expand.all-bindings (Map.put Expand.all-bindings id binding)))
+  (defndynamic find-all-matching-bindings [id]
+    (Map.kv-reduce
+      (fn [a p]
+        (let [k (car p)
+              scopes (Expand.syntax-scopes id)]
+          (if (and (= (Expand.syntax-e k) (Expand.syntax-e id))
+                   (all? (fn [m] (List.in? m scopes)) (Expand.syntax-scopes k)))
+            (cons k a)
+            a)))
+      '()
+      Expand.all-bindings))
+  (defndynamic check-unambiguous [max-id candidates]
+    (map
+      (fn [c]
+        (unless (all? (fn [m] (List.in? m (Expand.syntax-scopes max-id))) (Expand.syntax-scopes c))
+          (macro-error (str "ambiguous: " max-id))))
+       candidates))
+  (defndynamic resolve [id]
+    (let [candidates (Expand.find-all-matching-bindings id)]
+      (if (nil? candidates)
+        (macro-error (str "not found: " id))
+        (let-do [max-id
+                  (reduce
+                    (fn [a e]
+                      (if (> (length (Expand.syntax-scopes e))
+                             (length (Expand.syntax-scopes a)))
+                        e
+                        a))
+                    (car candidates)
+                    (cdr candidates))]
+          (Expand.check-unambiguous max-id candidates)
+          (Map.get Expand.all-bindings max-id)))))
+
+  (defdynamic core-scope (scope))
+  (defdynamic core-forms '(let quote fn let-syntax quote-syntax defn defndynamic def defdynamic defmodule))
+  (map
+    (fn [e] (Expand.add-binding! (Expand.syntax e (list core-scope)) e))
+    core-forms)
+
+  (defndynamic introduce [s]
+    (Expand.add-scope s Expand.core-scope))
+
+  (defndynamic identifier? [s] (Expand.syntax? s))
+  (defdynamic empty-env {})
+  (defndynamic env-extend [e k v] (Map.put e k v))
+  (defndynamic env-lookup [e k] (Map.get e k))
+  (defdynamic variable (gensym-with 'variable))
+
+  (defndynamic expand-identifier [s e]
+    (let [binding (Expand.resolve s)]
+      (cond
+        (nil? binding) (macro-error (str "free variable: " s))
+        (List.in? binding core-forms) (macro-error (str "bad syntax: " s))
+        (let [v (Expand.env-lookup e binding)]
+          (cond
+            (= v Expand.variable) s
+            (nil? s) (macro-error (str "out of context: " s))
+            (macro-error (str "bad syntax: " s)))))))
+
+  (defndynamic apply-transformer [t s]
+    (let [i (Expand.scope)
+          s (Expand.add-scope s i)
+          transformed (t s)]
+      (Expand.flip-scope transformed i)))
+
+  (defndynamic expand-fn [s e]
+    (let [args (cadr s)
+          body (caddr s)
+          sc (Expand.scope)
+          a-e (reduce
+                  (fn [p arg]
+                    (let [args (car p)
+                          e (cadr p)
+                          id (Expand.add-scope arg sc)
+                          b (gensym)
+                          _ (Expand.add-binding! id b)]
+                      (list
+                        (cons-last id args)
+                        (Expand.env-extend e b Expand.variable))))
+                  (list '() e)
+                  args)
+          args (car a-e)
+          benv (cadr a-e)
+          ebody (Expand.expand-in (Expand.add-scope body sc)
+                                  benv)]
+      `(%(car s) %args %ebody)))
+
+  (defndynamic expand-let-syntax [s e]
+    (let [lhs (caadr s)
+          rhs (cadadr s)
+          body (caddr s)
+          sc (Expand.scope)
+          id (Expand.add-scope lhs sc)
+          b (gensym)
+          _ (Expand.add-binding! id b)
+          rhs-val (Expand.eval-for-syntax-binding rhs)
+          benv (Expand.env-extend e b rhs-val)]
+      (Expand.expand-in (Expand.add-scope body sc) benv)))
+
+  (defndynamic eval-for-syntax-binding [rhs]
+    (eval (Debug.trace (Expand.compile (Debug.trace (Expand.expand-all rhs))))))
+
+  (defndynamic expand-app [s e]
+    (map (fn [subs] (Expand.expand-in subs e)) s))
+
+  (defndynamic expand-id-app [s e]
+    (let [binding (Expand.resolve (car s))]
+      (case binding
+        'fn (Expand.expand-fn s e)
+        'let-syntax (Expand.expand-let-syntax s e)
+        'quote s
+        'quote-syntax s
+        (let [v (Expand.env-lookup e binding)]
+          (if (proc? v)
+            (Expand.expand-in (Expand.apply-transformer v s) e)
+            (Expand.expand-app s e))))))
+
+  (defndynamic compile [s]
+    (cond
+      (Expand.identifier? s) (Expand.resolve s)
+      (Expand.identifier? (car s))
+        (case (Expand.resolve (car s))
+          'fn
+            `(fn %(collect-into (map Expand.resolve (cadr s)) array) %(Expand.compile (caddr s)))
+          'quote
+            `(quote %(Expand.to-datum (cadr s)))
+          'quote-syntax
+            `(quote %(cadr s))
+          (map Expand.compile s))
+      (map Expand.compile s)))
+
+  (defndynamic expand-in [s e]
+    (cond
+      (Expand.identifier? s) (Expand.expand-identifier s e)
+      (and (list? s)
+           (> (length s) 0)
+           (Expand.identifier? (car s)))
+        (Expand.expand-id-app s e)
+      (list? s) (Expand.expand-app s e)
+      (list (Expand.syntax 'quote (list Expand.core-scope))
+            s)))
+
+  (defndynamic expand-all [s]
+    (Expand.expand-in s Expand.empty-env))
+)
