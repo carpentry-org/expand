@@ -1,0 +1,18 @@
+(load "Test.carp")
+(load "../expand.carp")
+
+(use-all Test)
+
+(deftest expand_tests
+  (assert-equal expand_tests
+    42
+    (Expand.to-datum (Expand.from-datum 42))
+    "to/from datum roundtrip preserves ints")
+  (assert-equal expand_tests
+    "hi"
+    (Expand.to-datum (Expand.from-datum "hi"))
+    "to/from datum roundtrip preserves strings")
+  (assert-equal expand_tests
+    true
+    (Expand.to-datum (Expand.from-datum true))
+    "to/from datum roundtrip preserves bools"))
