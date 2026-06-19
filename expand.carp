@@ -1,5 +1,4 @@
-(doc Expand "is a simple macro expander based on
-[this talk by Matthew Flat](https://www.youtube.com/watch?v=Or_yKiI3Ha4).")
+(doc Expand "is a simple macro expander.")
 (defmodule Expand
   (defndynamic syntax [e scopes]
     (list 'syntax {"e" e "scopes" scopes}))
