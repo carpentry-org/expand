@@ -2,11 +2,6 @@
 
 is a simple hygienic macroexpander in and for Carp.
 
-It’s based on [this talk by Matthew
-Flatt](https://www.youtube.com/watch?v=Or_yKiI3Ha4) and
-implements the simple nano expander. I intend to keep
-working on it when motivation strikes.
-
 ```clojure
 (load "expand.carp")
 
