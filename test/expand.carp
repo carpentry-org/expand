@@ -3,6 +3,13 @@
 
 (use-all Test)
 
+(defmacro flipped-scopes [scopes elem]
+  (str (Expand.syntax-scopes (Expand.flip-scope (Expand.syntax 'x scopes) elem))))
+
+(defmacro syntax-binding-applied [arg]
+  ((Expand.eval-for-syntax-binding
+    (Expand.introduce (Expand.from-datum '(fn [x] x)))) arg))
+
 (deftest expand_tests
   (assert-equal expand_tests
     42
@@ -15,4 +22,20 @@
   (assert-equal expand_tests
     true
     (Expand.to-datum (Expand.from-datum true))
-    "to/from datum roundtrip preserves bools"))
+    "to/from datum roundtrip preserves bools")
+  (assert-equal expand_tests
+    "(5)"
+    (flipped-scopes (5 7) 7)
+    "flip-scope removes a present scope")
+  (assert-equal expand_tests
+    "(10 20)"
+    (flipped-scopes (1 10 20) 1)
+    "flip-scope removes the first scope")
+  (assert-equal expand_tests
+    "(3 1 2)"
+    (flipped-scopes (1 2) 3)
+    "flip-scope adds an absent scope")
+  (assert-equal expand_tests
+    3
+    (syntax-binding-applied 3)
+    "eval-for-syntax-binding evaluates the expanded binding"))
