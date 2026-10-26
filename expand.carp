@@ -40,7 +40,7 @@
   (defndynamic flip-scope [s sc]
     (Expand.adjust-scope s sc
       (fn [l elem]
-        (let [i (List.find l (fn [m] (= m elem)))]
+        (let [i (List.find-index l (fn [m] (= m elem)))]
           (if (nil? i)
             (cons elem l)
             (Dynamic.List.remove-nth l i))))))
@@ -61,8 +61,8 @@
       Expand.all-bindings))
   (defndynamic check-unambiguous [max-id candidates]
     (map
-      (fn [c]
-        (unless (all? (fn [m] (List.in? m (Expand.syntax-scopes max-id))) (Expand.syntax-scopes c))
+      (fn [candidate]
+        (unless (all? (fn [m] (List.in? m (Expand.syntax-scopes max-id))) (Expand.syntax-scopes candidate))
           (macro-error (str "ambiguous: " max-id))))
        candidates))
   (defndynamic resolve [id]
@@ -100,7 +100,7 @@
     (let [binding (Expand.resolve s)]
       (cond
         (nil? binding) (macro-error (str "free variable: " s))
-        (List.in? binding core-forms) (macro-error (str "bad syntax: " s))
+        (List.in? binding Expand.core-forms) (macro-error (str "bad syntax: " s))
         (let [v (Expand.env-lookup e binding)]
           (cond
             (= v Expand.variable) s
@@ -148,7 +148,7 @@
       (Expand.expand-in (Expand.add-scope body sc) benv)))
 
   (defndynamic eval-for-syntax-binding [rhs]
-    (eval (Debug.trace (Expand.compile (Debug.trace (Expand.expand-all rhs))))))
+    (eval (Expand.compile (Expand.expand-all rhs))))
 
   (defndynamic expand-app [s e]
     (map (fn [subs] (Expand.expand-in subs e)) s))
