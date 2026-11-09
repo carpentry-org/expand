@@ -6,6 +6,11 @@
 (defmacro flipped-scopes [scopes elem]
   (str (Expand.syntax-scopes (Expand.flip-scope (Expand.syntax 'x scopes) elem))))
 
+; dynamic functions are only callable at compile time, so the round trip runs
+; inside a macro
+(defmacro datum-roundtrip [v]
+  (Expand.to-datum (Expand.from-datum v)))
+
 (defmacro syntax-binding-applied [arg]
   ((Expand.eval-for-syntax-binding
     (Expand.introduce (Expand.from-datum '(fn [x] x)))) arg))
@@ -13,15 +18,15 @@
 (deftest expand_tests
   (assert-equal expand_tests
     42
-    (Expand.to-datum (Expand.from-datum 42))
+    (datum-roundtrip 42)
     "to/from datum roundtrip preserves ints")
   (assert-equal expand_tests
     "hi"
-    (Expand.to-datum (Expand.from-datum "hi"))
+    (datum-roundtrip "hi")
     "to/from datum roundtrip preserves strings")
   (assert-equal expand_tests
     true
-    (Expand.to-datum (Expand.from-datum true))
+    (datum-roundtrip true)
     "to/from datum roundtrip preserves bools")
   (assert-equal expand_tests
     "(5)"

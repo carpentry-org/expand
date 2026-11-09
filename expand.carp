@@ -6,11 +6,16 @@
     (Map.get (cadr s) "e"))
   (defndynamic syntax-scopes [s]
     (Map.get (cadr s) "scopes"))
+  ; key order of a dynamic map depends on the compiler's hash, so check
+  ; membership instead of comparing Map.keys
   (defndynamic syntax? [s]
     (and (list? s)
          (= (length s) 2)
          (= (car s) 'syntax)
-         (= (Map.keys (cadr s)) '("e" "scopes"))))
+         (let [m (cadr s)]
+           (and (= (Map.len m) 2)
+                (Map.contains? m "e")
+                (Map.contains? m "scopes")))))
   (defndynamic from-datum [v]
     (cond
       (Expand.syntax? v) v
